@@ -1335,3 +1335,25 @@ kbd {
     padding: 16px;
   }
 }
+
+/* PWA : installation et hors ligne */
+.install-btn {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.install-btn:hover { background: var(--accent); color: #fff; }
+.offline-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #3a2f12;
+  color: #ffcf5a;
+  white-space: nowrap;
+}

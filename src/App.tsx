@@ -9,6 +9,7 @@ import { buildDocx } from './word';
 import { canvasToBytes, download, fontsReady, loadImage, renderPoster, type ExportOpts } from './render';
 import { idb, type StoredImage } from './db';
 import { Poster } from './Poster';
+import { PwaStatus } from './pwa';
 import {
   CellInspector, ExportPanel, FormatPanel, GridPanel, ImagesPanel, LayoutsSection, MultiInspector, ShapeInspector, ShapesSection, TextInspector,
   TextsPanel, type ExportType,
@@ -655,6 +656,7 @@ export default function App() {
           <input type="checkbox" checked={showGuides} onChange={(e) => setShowGuides(e.target.checked)} /> Repères
         </label>
         <div className="tb-spacer" />
+        <PwaStatus />
         <span className={cls('save-state', saveState)}>
           {saveState === 'saving' ? 'Enregistrement…' : saveState === 'saved' ? 'Enregistré' : saveState === 'error' ? 'Non enregistré' : ''}
         </span>
