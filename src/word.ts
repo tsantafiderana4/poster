@@ -39,5 +39,18 @@ export async function buildDocx(jpeg: Uint8Array, wMm: number, hMm: number) {
       },
     ],
   });
-  return { blob: await Packer.toBlob(doc), scaled: f < 1 };
+  // Empêche Word de recompresser l'image (220 ppi par défaut) quand le document est enregistré.
+  const { default: JSZip } = await import('jszip');
+  const zip = await JSZip.loadAsync(await Packer.toBlob(doc));
+  const settings = zip.file('word/settings.xml');
+  if (settings) {
+    const xml = await settings.async('string');
+    if (!xml.includes('doNotAutoCompressPictures')) zip.file('word/settings.xml', xml.replace('</w:settings>', '<w:doNotAutoCompressPictures/></w:settings>'));
+  }
+  const blob = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    compression: 'DEFLATE',
+  });
+  return { blob, scaled: f < 1 };
 }

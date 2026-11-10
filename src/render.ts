@@ -34,6 +34,96 @@ export interface ExportOpts {
   dpi: number;
   bleed: boolean;
   cropMarks: boolean;
+  /** Netteté d'impression : 0 aucune, 1 légère, 2 forte. */
+  sharpen: 0 | 1 | 2;
+}
+
+const SHARPEN_AMOUNT = [0, 0.5, 1] as const;
+/** Au-delà, on dessine directement l'image (photo très zoomée sur grand format). */
+const MAX_PREP_PX = 25e6;
+
+function makeCanvas(w: number, h: number) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  if (!g) throw new Error('Image trop grande pour ce navigateur. Essayez une résolution plus basse.');
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  return { c, g };
+}
+
+/**
+ * Redimensionne l'image à sa taille d'impression exacte (en pixels).
+ * Les grandes réductions se font par moitiés successives : plus net, sans moiré ni crénelage.
+ */
+function resample(im: HTMLImageElement, tw: number, th: number): HTMLCanvasElement {
+  let cur: CanvasImageSource = im;
+  let cw = im.naturalWidth;
+  let ch = im.naturalHeight;
+  while (cw / 2 >= tw && ch / 2 >= th) {
+    const nw = Math.round(cw / 2);
+    const nh = Math.round(ch / 2);
+    const { c, g } = makeCanvas(nw, nh);
+    g.drawImage(cur, 0, 0, nw, nh);
+    if (cur instanceof HTMLCanvasElement) cur.width = cur.height = 0;
+    cur = c;
+    cw = nw;
+    ch = nh;
+  }
+  const { c, g } = makeCanvas(tw, th);
+  g.drawImage(cur, 0, 0, tw, th);
+  if (cur instanceof HTMLCanvasElement) cur.width = cur.height = 0;
+  return c;
+}
+
+/** Accentuation (masque flou, rayon 1 px) pour compenser l'adoucissement de l'impression. */
+function unsharp(c: HTMLCanvasElement, amount: number) {
+  const w = c.width;
+  const h = c.height;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  const img = g.getImageData(0, 0, w, h);
+  const d = img.data;
+  // Flou gaussien 3×3 séparable [1 2 1] : passe horizontale…
+  const tmp = new Uint16Array(w * h * 3);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      const i = (row + x) * 4;
+      const l = (row + (x > 0 ? x - 1 : x)) * 4;
+      const r = (row + (x < w - 1 ? x + 1 : x)) * 4;
+      const t = (row + x) * 3;
+      tmp[t] = d[l] + 2 * d[i] + d[r];
+      tmp[t + 1] = d[l + 1] + 2 * d[i + 1] + d[r + 1];
+      tmp[t + 2] = d[l + 2] + 2 * d[i + 2] + d[r + 2];
+    }
+  }
+  // …puis verticale, et application : pixel + force × (pixel − flou).
+  for (let y = 0; y < h; y++) {
+    const up = (y > 0 ? y - 1 : y) * w;
+    const dn = (y < h - 1 ? y + 1 : y) * w;
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      const t = (row + x) * 3;
+      const tu = (up + x) * 3;
+      const td = (dn + x) * 3;
+      const i = (row + x) * 4;
+      for (let k = 0; k < 3; k++) {
+        const blur = (tmp[tu + k] + 2 * tmp[t + k] + tmp[td + k]) / 16;
+        d[i + k] = d[i + k] + amount * (d[i + k] - blur);
+      }
+    }
+  }
+  g.putImageData(img, 0, 0);
+}
+
+/** Image prête à imprimer : taille exacte en pixels + netteté. */
+function printReady(im: HTMLImageElement, tw: number, th: number, sharpen: ExportOpts['sharpen']): CanvasImageSource {
+  if (tw < 1 || th < 1 || tw * th > MAX_PREP_PX) return im;
+  const c = resample(im, tw, th);
+  const a = SHARPEN_AMOUNT[sharpen] ?? 0;
+  if (a > 0) unsharp(c, a);
+  return c;
 }
 
 /** Zone autour des fonds perdus réservée aux traits de coupe (mm). */
@@ -128,10 +218,17 @@ export async function renderPoster(doc: Doc, images: Record<string, ImageAsset>,
     ctx.clip();
     const f = cssFilter(cell);
     if (f !== 'none') ctx.filter = f;
-    ctx.translate(r.x + p.cx, r.y + p.cy);
+    // Taille d'impression en pixels, et centre calé sur la grille de pixels pour un rendu 1:1 (sans flou de rééchantillonnage).
+    const tw = Math.round(p.iw * k);
+    const th = Math.round(p.ih * k);
+    const rotated = cell.rot % 180 !== 0;
+    const snap = (mm: number, size: number) => ((Math.round(off + mm * k - size / 2) + size / 2) - off) / k;
+    ctx.translate(snap(r.x + p.cx, rotated ? th : tw), snap(r.y + p.cy, rotated ? tw : th));
     ctx.rotate((cell.rot * Math.PI) / 180);
     if (cell.flipX) ctx.scale(-1, 1);
-    ctx.drawImage(im, -p.iw / 2, -p.ih / 2, p.iw, p.ih);
+    const src = printReady(im, tw, th, o.sharpen);
+    ctx.drawImage(src, -tw / (2 * k), -th / (2 * k), tw / k, th / k);
+    if (src instanceof HTMLCanvasElement) src.width = src.height = 0;
     ctx.restore();
     if (doc.borderWidth > 0) {
       const bw = doc.borderWidth / 2;
@@ -232,7 +329,7 @@ function jpegSetDpi(buf: Uint8Array, dpi: number) {
 
 export async function canvasToBytes(canvas: HTMLCanvasElement, type: 'image/png' | 'image/jpeg', dpi: number) {
   const blob = await new Promise<Blob>((res, rej) =>
-    canvas.toBlob((b) => (b ? res(b) : rej(new Error('Export impossible : image trop grande pour ce navigateur.'))), type, 0.95),
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error('Export impossible : image trop grande pour ce navigateur.'))), type, 1),
   );
   let buf = new Uint8Array(await blob.arrayBuffer());
   if (type === 'image/png') buf = pngWithDpi(buf, dpi);

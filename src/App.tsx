@@ -65,6 +65,31 @@ const IMAGE_FIELDS = ['imageId', 'fit', 'zoom', 'ox', 'oy', 'rot', 'flipX', 'bri
 type ImageFields = Pick<Cell, (typeof IMAGE_FIELDS)[number]>;
 const imageFields = (c: Cell): ImageFields => Object.fromEntries(IMAGE_FIELDS.map((k) => [k, c[k]])) as ImageFields;
 
+/**
+ * Case → image : la case visée d'abord, puis les cases vides,
+ * puis (si `replace`) les cases déjà remplies, dans l'ordre de lecture.
+ */
+function planPlacement(cells: Cell[], ids: string[], targetId: string | undefined, replace: boolean) {
+  const queue = [...ids];
+  const assign = new Map<string, string>();
+  const order = sortCells(cells);
+  if (targetId && queue.length && cells.some((c) => c.id === targetId)) assign.set(targetId, queue.shift()!);
+  for (const c of order) {
+    if (!queue.length) break;
+    if (!c.imageId && !assign.has(c.id)) assign.set(c.id, queue.shift()!);
+  }
+  if (replace) {
+    // On reprend à partir de la case visée pour remplacer dans l'ordre naturel.
+    const start = targetId ? Math.max(0, order.findIndex((c) => c.id === targetId)) : 0;
+    const rotated = [...order.slice(start), ...order.slice(0, start)];
+    for (const c of rotated) {
+      if (!queue.length) break;
+      if (!assign.has(c.id)) assign.set(c.id, queue.shift()!);
+    }
+  }
+  return assign;
+}
+
 function blobToDataURL(b: Blob) {
   return new Promise<string>((res, rej) => {
     const r = new FileReader();
@@ -121,7 +146,7 @@ export default function App() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [exportOpts, setExportOpts] = useState<ExportOpts>({ dpi: 300, bleed: true, cropMarks: false });
+  const [exportOpts, setExportOpts] = useState<ExportOpts>({ dpi: 300, bleed: true, cropMarks: false, sharpen: 1 });
   const [exportType, setExportType] = useState<ExportType>('docx');
   const stageRef = useRef<HTMLElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -228,17 +253,14 @@ export default function App() {
     [say],
   );
 
-  /** Place des images : d'abord dans la case visée, puis dans les cases vides. */
+  /**
+   * Place des images : d'abord dans la case visée, puis dans les cases vides.
+   * Avec `replace`, les images restantes remplacent ensuite celles déjà en place, dans l'ordre de lecture.
+   */
   const placeImages = useCallback(
-    (ids: string[], targetId?: string) =>
+    (ids: string[], targetId?: string, replace = false) =>
       commit((d) => {
-        const queue = [...ids];
-        const assign = new Map<string, string>();
-        if (targetId && queue.length) assign.set(targetId, queue.shift()!);
-        for (const c of sortCells(d.cells)) {
-          if (!queue.length) break;
-          if (!c.imageId && !assign.has(c.id)) assign.set(c.id, queue.shift()!);
-        }
+        const assign = planPlacement(d.cells, ids, targetId, replace);
         if (!assign.size) return d;
         return {
           ...d,
@@ -253,13 +275,78 @@ export default function App() {
   const placeRef = useRef(placeImages);
   placeRef.current = placeImages;
 
+  const docRef = useRef(doc);
+  docRef.current = doc;
+
+  /** Ajoute des fichiers à la bibliothèque et les place sur le poster (triés par nom : IMG_001, IMG_002…). */
   const onFiles = useCallback(
-    async (files: File[], target?: string) => {
-      const a = await addFiles(files);
-      if (a.length) placeImages(a.map((x) => x.id), target);
+    async (files: File[], target?: string, replace = false) => {
+      const sorted = [...files].sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }));
+      const a = await addFiles(sorted);
+      if (!a.length) return;
+      const ids = a.map((x) => x.id);
+      const placed = planPlacement(docRef.current.cells, ids, target, replace).size;
+      placeImages(ids, target, replace);
+      const rest = a.length - placed;
+      if (rest > 0) say(`${placed} photo${placed > 1 ? 's' : ''} placée${placed > 1 ? 's' : ''}, ${rest} ajoutée${rest > 1 ? 's' : ''} à la bibliothèque (plus de cases).`);
+      else if (replace && a.length > 1) say(`${placed} photos placées.`);
     },
-    [addFiles, placeImages],
+    [addFiles, placeImages, say],
   );
+
+  /* ----- dépôt rapide : glisser des fichiers sur l'application, ou coller (Ctrl+V) ----- */
+  const [fileDrag, setFileDrag] = useState(false);
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      setFileDrag(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) setFileDrag(false);
+    };
+    const end = () => {
+      depth = 0;
+      setFileDrag(false);
+    };
+    // Un fichier lâché hors du poster ne doit pas être ouvert par le navigateur.
+    const over = (e: DragEvent) => hasFiles(e) && e.preventDefault();
+    const drop = (e: DragEvent) => hasFiles(e) && e.preventDefault();
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('dragover', over);
+    window.addEventListener('drop', end, true);
+    window.addEventListener('drop', drop);
+    window.addEventListener('dragend', end);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('drop', end, true);
+      window.removeEventListener('drop', drop);
+      window.removeEventListener('dragend', end);
+    };
+  }, []);
+
+  const selRef = useRef(sel);
+  selRef.current = sel;
+  useEffect(() => {
+    const paste = (e: ClipboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      if (!files.length) return;
+      e.preventDefault();
+      const s = selRef.current;
+      onFiles(files, s?.kind === 'cells' && s.ids.length === 1 ? s.ids[0] : undefined, true);
+    };
+    window.addEventListener('paste', paste);
+    return () => window.removeEventListener('paste', paste);
+  }, [onFiles]);
 
   const onDropOnCell = useCallback(
     (cellId: string, dt: DataTransfer) => {
@@ -283,7 +370,7 @@ export default function App() {
         setSel({ kind: 'cells', ids: [cellId] });
         return;
       }
-      if (dt.files.length) onFiles([...dt.files], cellId);
+      if (dt.files.length) onFiles([...dt.files], cellId, true);
     },
     [commit, updateCell, onFiles],
   );
@@ -781,9 +868,16 @@ export default function App() {
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
-          if (e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]);
+          if (e.dataTransfer.files.length) onFiles([...e.dataTransfer.files], undefined, true);
         }}
       >
+        {fileDrag && (
+          <div className="drop-hint">
+            Lâchez sur le poster : les photos remplissent les cases vides puis <strong>remplacent les anciennes</strong> dans l'ordre.
+            <br />
+            Lâchez sur une case précise pour commencer par celle-ci.
+          </div>
+        )}
         <div className="stage-inner">
           <Poster
             doc={doc}

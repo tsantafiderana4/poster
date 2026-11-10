@@ -801,6 +801,29 @@ kbd {
   margin: auto;
   padding: 40px;
 }
+.stage {
+  position: relative;
+}
+.drop-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  max-width: min(560px, calc(100% - 32px));
+  background: rgba(10, 11, 14, 0.92);
+  border: 1.5px dashed var(--accent);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  pointer-events: none;
+}
+.drop-hint strong {
+  color: var(--accent);
+}
 .poster-wrap {
   position: relative;
 }

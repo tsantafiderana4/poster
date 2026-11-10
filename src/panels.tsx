@@ -672,7 +672,7 @@ export function ExportPanel(props: {
             : props.type === 'png'
               ? 'PNG sans perte, résolution inscrite dans le fichier.'
               : props.type === 'jpg'
-                ? 'JPEG qualité 95 %, fichier plus léger.'
+                ? 'JPEG qualité maximale, fichier plus léger que le PNG.'
                 : 'Document Word (.docx) : le poster occupe toute la page, sans marges, à la taille du format. Imprimez depuis Word en « taille réelle ».'}
         </p>
         {props.type === 'docx' && Math.max(z.wMm, z.hMm) > WORD_MAX_MM && (
@@ -701,6 +701,18 @@ export function ExportPanel(props: {
             </>
           )}
         </div>
+      </Section>
+      <Section title="Netteté des photos">
+        <Seg
+          options={[
+            { value: 0, label: 'Aucune', title: 'Photos telles quelles' },
+            { value: 1, label: 'Légère', title: 'Recommandé pour l’impression' },
+            { value: 2, label: 'Forte', title: 'Photos un peu floues ou grand format' },
+          ]}
+          value={opts.sharpen}
+          onChange={(v) => setOpts({ ...opts, sharpen: v })}
+        />
+        <p className="hint">Chaque photo est redimensionnée à sa taille d'impression exacte puis accentuée pour compenser l'adoucissement de l'encre sur le papier.</p>
       </Section>
       <Section title="Repères d'impression">
         <Toggle label={`Inclure les fonds perdus (${doc.bleed} mm)`} checked={opts.bleed && doc.bleed > 0} disabled={doc.bleed === 0} onChange={(v) => setOpts({ ...opts, bleed: v })} />
