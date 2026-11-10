@@ -762,6 +762,18 @@ export default function App() {
         <label className="tb-check" title="Ligne de coupe et zone de sécurité">
           <input type="checkbox" checked={showGuides} onChange={(e) => setShowGuides(e.target.checked)} /> Repères
         </label>
+        <button
+          className="ghost danger tb-clear"
+          disabled={!doc.cells.some((c) => c.imageId)}
+          title="Retirer toutes les photos du poster (la grille est conservée, Ctrl+Z pour annuler)"
+          onClick={() => {
+            commit((d) => ({ ...d, cells: d.cells.map((c) => ({ ...c, imageId: null, zoom: 1, ox: 0, oy: 0, rot: 0, flipX: false })) }));
+            setSel(null);
+            say('Poster vidé (Ctrl+Z pour annuler).');
+          }}
+        >
+          Vider
+        </button>
         <div className="tb-spacer" />
         <PwaStatus />
         <span className={cls('save-state', saveState)}>
