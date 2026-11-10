@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { Cell, Doc, ImageAsset, Selection, TextItem } from './types';
 import type { SavedLayout, ShapeItem, ShapeKind } from './types';
 import {
-  applyCellRatio, applyLayout, cellRect, defaultDoc, layoutFromDoc, mergeCells, newText, normalizeDoc, sortCells, splitCell, uid,
+  DEFAULT_LAYOUT_ID, applyCellRatio, applyLayout, cellRect, defaultDoc, defaultLayout as makeDefaultLayout, layoutFromDoc, mergeCells, newText, normalizeDoc, sortCells, splitCell, uid,
 } from './layout';
 import { cellAt, newShape } from './shapes';
 import { buildDocx } from './word';
@@ -122,7 +122,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportOpts, setExportOpts] = useState<ExportOpts>({ dpi: 300, bleed: true, cropMarks: false });
-  const [exportType, setExportType] = useState<ExportType>('pdf');
+  const [exportType, setExportType] = useState<ExportType>('docx');
   const stageRef = useRef<HTMLElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
@@ -353,10 +353,24 @@ export default function App() {
   const [layouts, setLayouts] = useState<SavedLayout[]>([]);
   const [defaultLayout, setDefaultLayout] = useState<string | null>(null);
   useEffect(() => {
-    Promise.all([idb.get<SavedLayout[]>('kv', 'layouts'), idb.get<string | null>('kv', 'defaultLayout')])
-      .then(([l, d]) => {
-        if (Array.isArray(l)) setLayouts(l);
-        if (d) setDefaultLayout(d);
+    Promise.all([
+      idb.get<SavedLayout[]>('kv', 'layouts'),
+      idb.get<string | null>('kv', 'defaultLayout'),
+      idb.get<boolean>('kv', 'defaultLayoutSeeded'),
+    ])
+      .then(([l, d, seeded]) => {
+        let list = Array.isArray(l) ? l : [];
+        let def = d ?? null;
+        // Une seule fois : ajoute le modèle « Défaut A4 2×2 » et le marque ★ (l'utilisateur peut ensuite le retirer).
+        if (!seeded) {
+          if (!list.some((x) => x.id === DEFAULT_LAYOUT_ID)) list = [makeDefaultLayout(), ...list];
+          def = DEFAULT_LAYOUT_ID;
+          idb.put('kv', list, 'layouts').catch(() => {});
+          idb.put('kv', def, 'defaultLayout').catch(() => {});
+          idb.put('kv', true, 'defaultLayoutSeeded').catch(() => {});
+        }
+        setLayouts(list);
+        if (def) setDefaultLayout(def);
       })
       .catch(() => {});
   }, []);

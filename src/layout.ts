@@ -420,18 +420,21 @@ export function applyTheme(d: Doc, t: Theme): Doc {
   };
 }
 
+/** Réglages d'un nouveau poster : A4, grille 2×2, espacements 4 mm, coins 10 mm, bordure noire 1,5 mm, fond blanc. */
 export function defaultDoc(): Doc {
-  const t = TEMPLATES.find((x) => x.id === 'mag')!;
-  const H = 420;
+  const t = TEMPLATES.find((x) => x.id === 'g2')!;
   return {
-    formatId: 'A3', width: 297, height: H, bleed: 3,
+    formatId: 'A4', width: 210, height: 297, bleed: 3,
     cols: t.cols, rows: t.rows, colSizes: ones(t.cols), rowSizes: ones(t.rows), cells: t.cells.map((s) => newCell(...s)),
-    gap: 4, marginX: 14, marginTop: 14, marginBottom: 62,
-    radius: 0, borderWidth: 0, borderColor: '#ffffff', background: '#f4f1ea',
-    texts: [
-      newText({ content: 'VOTRE TITRE', y: (H - 56) / H, size: 30, font: 'Bebas Neue', weight: 400, letterSpacing: 0.02, lineHeight: 1 }),
-      newText({ content: 'Sous-titre · Date · Lieu', y: (H - 22) / H, size: 5.5, font: 'Montserrat', weight: 600, letterSpacing: 0.3, uppercase: true }),
-    ],
+    gap: 4, marginX: 4, marginTop: 4, marginBottom: 4,
+    radius: 10, borderWidth: 1.5, borderColor: '#000000', background: '#ffffff',
+    texts: [],
     shapes: [],
   };
+}
+
+/** Modèle « Défaut A4 2×2 » ajouté une fois dans « Mes modèles » et marqué ★. */
+export const DEFAULT_LAYOUT_ID = 'defaut-a4-2x2';
+export function defaultLayout(): SavedLayout {
+  return { ...layoutFromDoc(defaultDoc(), 'Défaut A4 2×2', true, false), id: DEFAULT_LAYOUT_ID };
 }
