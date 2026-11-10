@@ -45,4 +45,4 @@ posters et modèles enregistrés sur l'appareil. Les mises à jour s'installent 
 - Indicateur de résolution réelle (DPI) pour chaque image, avec alerte sous 150 DPI.
 - Textes libres (8 polices, bandeau de couleur, ombre, interlettrage), aimantation au centre, thèmes.
 - Export PDF à la taille exacte, Word (.docx, pleine page sans marges, jusqu'à 558 mm), PNG ou JPEG (100 / 150 / 300 DPI, résolution inscrite dans le fichier).
-- Annuler/rétablir, sauvegarde automatique dans le navigateur, projet .json (images incluses).
+- Annuler/rétablir, projet .json (images incluses). À chaque ouverture, Poster Pro démarre sur la grille par défaut (modèle ★ : A4, 2×2, sans titre).

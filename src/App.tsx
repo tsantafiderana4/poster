@@ -137,9 +137,15 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [d, rows] = await Promise.all([idb.get<Doc>('kv', 'doc'), idb.all<StoredImage>('images')]);
+        const [rows, list, defId] = await Promise.all([
+          idb.all<StoredImage>('images'),
+          idb.get<SavedLayout[]>('kv', 'layouts'),
+          idb.get<string | null>('kv', 'defaultLayout'),
+        ]);
         setImages(rows.map((r) => ({ id: r.id, name: r.name, w: r.w, h: r.h, url: URL.createObjectURL(r.blob) })));
-        if (d && Array.isArray(d.cells) && typeof d.width === 'number') reset(normalizeDoc({ ...defaultDoc(), ...d }));
+        // À chaque ouverture, on repart sur la grille par défaut (modèle ★), sans recharger le poster précédent.
+        const L = Array.isArray(list) ? list.find((x) => x.id === defId) : undefined;
+        if (L) reset(applyLayout(defaultDoc(), { ...L, useFormat: true }));
         if (new URLSearchParams(location.search).has('demo') && !rows.length) {
           const files = await demoFiles();
           const a = await addFilesRef.current(files);
